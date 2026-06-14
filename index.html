@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Scan Food">
+  <meta name="theme-color" content="#0D0D0F">
+  <title>Food Scanner</title>
+
+  <style>
+    :root {
+      --bg:        #0D0D0F;
+      --surface:   #161619;
+      --border:    #252529;
+      --teal:      #00E5CC;
+      --teal-dim:  rgba(0,229,204,0.12);
+      --text:      #F0EEE9;
+      --muted:     #6B6B78;
+      --red:       #FF4E4E;
+      --mono: 'SF Mono', ui-monospace, 'Cascadia Code', monospace;
+      --sans: -apple-system, 'Helvetica Neue', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+
+    /* ── LAYOUT ── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 16px 20px 12px;
+      padding-top: max(16px, env(safe-area-inset-top));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      font-family: var(--mono);
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      color: var(--teal);
+      text-transform: uppercase;
+    }
+
+    .header-hint {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    main {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ── SCANNER ── */
+    #scanner-section {
+      position: relative;
+      background: #000;
+      aspect-ratio: 1 / 1;
+      max-height: 60vw;
+      overflow: hidden;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* viewfinder overlay */
+    #viewfinder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .vf-box {
+      position: relative;
+      width: 62%;
+      aspect-ratio: 1.8 / 1;
+    }
+
+    /* corner brackets */
+    .vf-box::before,
+    .vf-box::after,
+    .vf-inner::before,
+    .vf-inner::after {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-color: var(--teal);
+      border-style: solid;
+    }
+    .vf-box::before   { top: 0; left: 0;    border-width: 2px 0 0 2px; }
+    .vf-box::after    { top: 0; right: 0;   border-width: 2px 2px 0 0; }
+    .vf-inner::before { bottom: 0; left: 0;  border-width: 0 0 2px 2px; }
+    .vf-inner::after  { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+
+    /* scan line */
+    .scan-line {
+      position: absolute;
+      left: 10%;
+      right: 10%;
+      height: 1.5px;
+      background: linear-gradient(90deg, transparent, var(--teal), transparent);
+      box-shadow: 0 0 8px var(--teal);
+      animation: scanline 2s ease-in-out infinite;
+      opacity: 0;
+    }
+
+    @keyframes scanline {
+      0%   { top: 10%; opacity: 0; }
+      10%  { opacity: 1; }
+      90%  { opacity: 1; }
+      100% { top: 90%; opacity: 0; }
+    }
+
+    /* scanning state pulses corners */
+    .scanning .vf-box::before,
+    .scanning .vf-box::after,
+    .scanning .vf-inner::before,
+    .scanning .vf-inner::after {
+      animation: pulse-corner 1.6s ease-in-out infinite;
+    }
+
+    @keyframes pulse-corner {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* detected flash */
+    .detected .vf-box::before,
+    .detected .vf-box::after,
+    .detected .vf-inner::before,
+    .detected .vf-inner::after {
+      border-color: #fff;
+      transition: border-color 0.15s;
+    }
+
+    #scanner-msg {
+      position: absolute;
+      bottom: 10px;
+      left: 0; right: 0;
+      text-align: center;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      color: rgba(255,255,255,0.55);
+      text-transform: uppercase;
+    }
+
+    /* dark overlay when cam not active */
+    #cam-placeholder {
+      position: absolute;
+      inset: 0;
+      background: #0a0a0c;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    #cam-placeholder .cam-icon {
+      width: 40px; height: 40px;
+      opacity: 0.25;
+    }
+
+    #cam-placeholder p {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    /* ── CONTROLS ── */
+    #controls {
+      padding: 14px 20px;
+      display: flex;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 10px;
+      border-radius: 8px;
+      border: none;
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn:active { transform: scale(0.97); opacity: 0.85; }
+
+    .btn-primary {
+      background: var(--teal);
+      color: #000;
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    /* manual barcode entry */
+    #manual-row {
+      padding: 0 20px 14px;
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #barcode-input {
+      flex: 1;
+      padding: 11px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 14px;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    #barcode-input:focus {
+      border-color: var(--teal);
+    }
+
+    #barcode-input::placeholder { color: var(--muted); }
+
+    .btn-go {
+      padding: 11px 18px;
+      background: var(--teal-dim);
+      color: var(--teal);
+      border: 1px solid var(--teal);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--mono);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn-go:active { opacity: 0.7; }
+
+    /* ── RESULTS ── */
+    #results {
+      padding: 0 20px;
+      padding-bottom: max(20px, env(safe-area-inset-bottom));
+    }
+
+    /* STATE: idle */
+    #empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 20px;
+      gap: 10px;
+      text-align: center;
+    }
+
+    #empty-state .empty-icon {
+      font-size: 36px;
+      opacity: 0.25;
+    }
+
+    #empty-state p {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* STATE: loading */
+    #loading-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 20px;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--teal);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* STATE: error */
+    #error-state {
+      margin: 20px 0;
+      padding: 16px;
+      background: rgba(255,78,78,0.08);
+      border: 1px solid rgba(255,78,78,0.25);
+      border-radius: 10px;
+      font-size: 13px;
+      color: var(--red);
+      line-height: 1.5;
+    }
+
+    /* STATE: result card */
+    #result-card {
+      margin: 16px 0;
+    }
+
+    .product-header {
+      padding: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px 12px 0 0;
+      border-bottom: none;
+    }
+
+    .product-brand {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--teal);
+      font-family: var(--mono);
+      margin-bottom: 4px;
+    }
+
+    .product-name {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.3;
+      color: var(--text);
+    }
+
+    .serving-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 10px;
+      padding: 5px 10px;
+      background: var(--teal-dim);
+      border: 1px solid rgba(0,229,204,0.2);
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--teal);
+      font-family: var(--mono);
+    }
+
+    /* macro grid */
+    .macro-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid var(--border);
+      border-radius: 0 0 12px 12px;
+      overflow: hidden;
+    }
+
+    .macro-cell {
+      padding: 14px 8px;
+      background: var(--surface);
+      text-align: center;
+      border-right: 1px solid var(--border);
+    }
+
+    .macro-cell:last-child { border-right: none; }
+
+    .macro-value {
+      font-family: var(--mono);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .macro-cell:first-child .macro-value {
+      color: var(--teal);
+    }
+
+    .macro-unit {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .macro-label {
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    /* per-100g note */
+    .per-note {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      letter-spacing: 0.03em;
+    }
+
+    /* barcode badge */
+    .barcode-badge {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span class="logo">Food Scanner</span>
+    <span class="header-hint">Open Food Facts</span>
+  </header>
+
+  <main>
+    <!-- Camera -->
+    <div id="scanner-section">
+      <video id="video" autoplay muted playsinline webkit-playsinline></video>
+      <div id="viewfinder">
+        <div class="vf-box">
+          <div class="vf-inner">
+            <div class="scan-line"></div>
+          </div>
+        </div>
+      </div>
+      <div id="scanner-msg">Point at barcode</div>
+      <div id="cam-placeholder">
+        <svg class="cam-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <p>Tap "Start Camera" to scan</p>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls">
+      <button class="btn btn-primary" id="btn-start">Start Camera</button>
+      <button class="btn btn-secondary" id="btn-stop" disabled>Stop</button>
+    </div>
+
+    <!-- Manual entry -->
+    <div id="manual-row">
+      <input id="barcode-input" type="number" inputmode="numeric" pattern="[0-9]*" placeholder="Or enter barcode manually…">
+      <button class="btn-go" id="btn-go">GO</button>
+    </div>
+
+    <!-- Results area -->
+    <div id="results">
+      <div id="empty-state">
+        <div class="empty-icon">🔍</div>
+        <p>Scan a barcode or enter one manually to see nutrition data.</p>
+      </div>
+      <div id="loading-state" class="hidden">
+        <div class="spinner"></div>
+        <span>Looking up product…</span>
+      </div>
+      <div id="error-state" class="hidden"></div>
+      <div id="result-card" class="hidden"></div>
+    </div>
+  </main>
+</div>
+
+<!-- ZXing barcode library -->
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js"></script>
+<script>
+(() => {
+  // ── DOM refs ──
+  const video       = document.getElementById('video');
+  const placeholder = document.getElementById('cam-placeholder');
+  const viewfinder  = document.getElementById('viewfinder');
+  const scannerMsg  = document.getElementById('scanner-msg');
+  const btnStart    = document.getElementById('btn-start');
+  const btnStop     = document.getElementById('btn-stop');
+  const barcodeInput= document.getElementById('barcode-input');
+  const btnGo       = document.getElementById('btn-go');
+  const emptyState  = document.getElementById('empty-state');
+  const loadingState= document.getElementById('loading-state');
+  const errorState  = document.getElementById('error-state');
+  const resultCard  = document.getElementById('result-card');
+
+  let codeReader = null;
+  let scanning   = false;
+  let lastCode   = null;
+  let cooldown   = false;
+
+  // ── State helpers ──
+  function showState(which) {
+    [emptyState, loadingState, errorState, resultCard].forEach(el => el.classList.add('hidden'));
+    which.classList.remove('hidden');
+  }
+
+  function showError(msg) {
+    errorState.textContent = msg;
+    showState(errorState);
+  }
+
+  // ── Camera ──
+  async function startCamera() {
+    try {
+      // ZXing's BrowserMultiFormatReader
+      codeReader = new ZXingBrowser.BrowserMultiFormatReader();
+
+      const constraints = {
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      await video.play();
+
+      placeholder.classList.add('hidden');
+      viewfinder.classList.add('scanning');
+      scanning = true;
+      lastCode = null;
+
+      btnStart.disabled = true;
+      btnStop.disabled  = false;
+      scannerMsg.textContent = 'Scanning…';
+
+      scanLoop();
+    } catch (err) {
+      showError('Camera access denied or unavailable. Please allow camera access in Safari settings, or enter a barcode manually below.');
+    }
+  }
+
+  function stopCamera() {
+    scanning = false;
+    if (video.srcObject) {
+      video.srcObject.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    }
+    viewfinder.classList.remove('scanning', 'detected');
+    placeholder.classList.remove('hidden');
+    btnStart.disabled = false;
+    btnStop.disabled  = true;
+    scannerMsg.textContent = 'Point at barcode';
+    codeReader = null;
+  }
+
+  async function scanLoop() {
+    if (!scanning) return;
+
+    // Draw current video frame to canvas for ZXing
+    const canvas = document.createElement('canvas');
+    canvas.width  = video.videoWidth  || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    try {
+      const reader = new ZXingBrowser.BrowserMultiFormatReader();
+      const result = await reader.decodeFromCanvas(canvas);
+
+      if (result && result.text && !cooldown) {
+        const code = result.text;
+        if (code !== lastCode) {
+          lastCode = code;
+          cooldown = true;
+
+          // Flash detected
+          viewfinder.classList.add('detected');
+          viewfinder.classList.remove('scanning');
+          scannerMsg.textContent = `Found: ${code}`;
+
+          setTimeout(() => {
+            viewfinder.classList.remove('detected');
+            viewfinder.classList.add('scanning');
+          }, 400);
+
+          // Vibrate if supported
+          if ('vibrate' in navigator) navigator.vibrate(60);
+
+          await lookupBarcode(code);
+
+          setTimeout(() => { cooldown = false; }, 2000);
+        }
+      }
+    } catch (_) {
+      // No barcode found in this frame — normal
+    }
+
+    if (scanning) requestAnimationFrame(scanLoop);
+  }
+
+  // ── API lookup ──
+  async function lookupBarcode(code) {
+    showState(loadingState);
+
+    try {
+      const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,serving_size,nutriments,image_small_url`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      if (data.status === 0 || !data.product) {
+        showError(`No product found for barcode ${code}.\n\nThe product may not be in the Open Food Facts database.`);
+        return;
+      }
+
+      renderResult(data.product, code);
+    } catch (err) {
+      showError(`Failed to fetch product data. Check your connection and try again.\n\n${err.message}`);
+    }
+  }
+
+  // ── Render result ──
+  function renderResult(p, code) {
+    const name    = p.product_name || 'Unknown product';
+    const brand   = p.brands || '';
+    const serving = p.serving_size || null;
+    const n       = p.nutriments || {};
+
+    // Prefer per-serving if we have it, else per 100g
+    const hasPer100  = n['energy-kcal_100g'] != null;
+    const hasServing = n['energy-kcal_serving'] != null;
+
+    let kcal, protein, carbs, fat, perLabel;
+
+    if (hasServing && serving) {
+      kcal    = fmt(n['energy-kcal_serving']);
+      protein = fmt(n['proteins_serving']);
+      carbs   = fmt(n['carbohydrates_serving']);
+      fat     = fmt(n['fat_serving']);
+      perLabel = `Per serving (${serving})`;
+    } else if (hasPer100) {
+      kcal    = fmt(n['energy-kcal_100g']);
+      protein = fmt(n['proteins_100g']);
+      carbs   = fmt(n['carbohydrates_100g']);
+      fat     = fmt(n['fat_100g']);
+      perLabel = 'Per 100g';
+    } else {
+      // fallback: try energy in kJ → kcal
+      const kj = n['energy_100g'] || n['energy-kj_100g'];
+      kcal    = kj ? fmt(kj / 4.184) : '—';
+      protein = fmt(n['proteins_100g']);
+      carbs   = fmt(n['carbohydrates_100g']);
+      fat     = fmt(n['fat_100g']);
+      perLabel = 'Per 100g';
+    }
+
+    resultCard.innerHTML = `
+      <div class="product-header">
+        ${brand ? `<div class="product-brand">${esc(brand)}</div>` : ''}
+        <div class="product-name">${esc(name)}</div>
+        ${serving ? `
+          <div class="serving-tag">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M3 12h18M3 18h18"/>
+            </svg>
+            ${esc(serving)} per serving
+          </div>` : ''}
+      </div>
+      <div class="macro-grid">
+        <div class="macro-cell">
+          <div class="macro-value">${kcal}</div>
+          <div class="macro-unit">kcal</div>
+          <div class="macro-label">Energy</div>
+        </div>
+        <div class="macro-cell">
+          <div class="macro-value">${protein}</div>
+          <div class="macro-unit">g</div>
+          <div class="macro-label">Protein</div>
+        </div>
+        <div class="macro-cell">
+          <div class="macro-value">${carbs}</div>
+          <div class="macro-unit">g</div>
+          <div class="macro-label">Carbs</div>
+        </div>
+        <div class="macro-cell">
+          <div class="macro-value">${fat}</div>
+          <div class="macro-unit">g</div>
+          <div class="macro-label">Fats</div>
+        </div>
+      </div>
+      <p class="per-note">${perLabel}</p>
+      <div class="barcode-badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="2" height="16"/><rect x="7" y="4" width="1" height="16"/>
+          <rect x="10" y="4" width="3" height="16"/><rect x="15" y="4" width="1" height="16"/>
+          <rect x="18" y="4" width="2" height="16"/>
+        </svg>
+        ${esc(code)}
+      </div>
+    `;
+    showState(resultCard);
+  }
+
+  function fmt(val) {
+    if (val == null || val === '') return '—';
+    const n = parseFloat(val);
+    if (isNaN(n)) return '—';
+    return n % 1 === 0 ? n.toString() : n.toFixed(1);
+  }
+
+  function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Events ──
+  btnStart.addEventListener('click', startCamera);
+  btnStop.addEventListener('click', stopCamera);
+
+  btnGo.addEventListener('click', () => {
+    const code = barcodeInput.value.trim();
+    if (!code) return;
+    lookupBarcode(code);
+  });
+
+  barcodeInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const code = barcodeInput.value.trim();
+      if (code) lookupBarcode(code);
+    }
+  });
+
+  // Stop camera when page hidden (Safari background)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && scanning) stopCamera();
+  });
+})();
+</script>
+</body>
+</html>
