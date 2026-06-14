@@ -172,8 +172,8 @@
   // ── ZXing setup (fallback) ──
   // Uses HTMLCanvasElementLuminanceSource which takes a canvas directly
   function initZxing() {
-    if (typeof ZXingLibrary === 'undefined') return null;
-    const Z = ZXingLibrary;
+    if (typeof ZXing === 'undefined') return null;
+    const Z = ZXing;
     const hints = new Map();
     hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [
       Z.BarcodeFormat.EAN_13,
@@ -267,7 +267,7 @@
           ctx.drawImage(video, 0, 0);
 
           try {
-            const Z          = ZXingLibrary;
+            const Z          = ZXing;
             const luminance  = new Z.HTMLCanvasElementLuminanceSource(canvas);
             const bitmap     = new Z.BinaryBitmap(new Z.HybridBinarizer(luminance));
             const result     = zxReader.decode(bitmap);
